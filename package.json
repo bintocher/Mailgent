@@ -1,0 +1,26 @@
+{
+  "name": "mailgent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Virtual Company platform with AI agents communicating via internal email",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=apps/backend & npm run dev --workspace=apps/frontend",
+    "dev:backend": "npm run dev --workspace=apps/backend",
+    "dev:frontend": "npm run dev --workspace=apps/frontend",
+    "build": "npm run build --workspace=packages/shared && npm run build --workspace=apps/backend && npm run build --workspace=apps/frontend",
+    "build:shared": "npm run build --workspace=packages/shared",
+    "build:backend": "npm run build --workspace=apps/backend",
+    "build:frontend": "npm run build --workspace=apps/frontend",
+    "start": "tsx apps/backend/src/main.ts",
+    "lint": "eslint . --ext .ts,.tsx",
+    "clean": "rm -rf packages/shared/dist apps/backend/dist apps/frontend/dist"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
