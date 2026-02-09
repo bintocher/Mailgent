@@ -43,6 +43,9 @@ function def(
  * pattern that supports leading `**\/` and trailing `*` / exact extension.
  * This intentionally stays simple; we do not pull in a third-party glob lib.
  */
+const IGNORED_DIRS = new Set(['node_modules', '.git', 'dist', '.next', '.nuxt', '__pycache__', '.mailgent']);
+const MAX_GLOB_RESULTS = 500;
+
 async function simpleGlob(dir: string, pattern: string): Promise<string[]> {
   const results: string[] = [];
 
@@ -57,6 +60,7 @@ async function simpleGlob(dir: string, pattern: string): Promise<string[]> {
   const regex = new RegExp(`^${regexStr}$`);
 
   async function walk(current: string, rel: string): Promise<void> {
+    if (results.length >= MAX_GLOB_RESULTS) return;
     let entries;
     try {
       entries = await fs.readdir(current, { withFileTypes: true });
@@ -64,9 +68,11 @@ async function simpleGlob(dir: string, pattern: string): Promise<string[]> {
       return;
     }
     for (const entry of entries) {
+      if (results.length >= MAX_GLOB_RESULTS) return;
       const childRel = rel ? `${rel}/${entry.name}` : entry.name;
       const childAbs = path.join(current, entry.name);
       if (entry.isDirectory()) {
+        if (IGNORED_DIRS.has(entry.name)) continue;
         await walk(childAbs, childRel);
       } else if (regex.test(childRel)) {
         results.push(childAbs);
@@ -131,8 +137,8 @@ export function registerBuiltinTools(
   // 3. list_files
   // -----------------------------------------------------------------------
   registry.register(
-    def('builtin-list-files', 'list_files', 'List files matching a glob pattern within the working directory.', 'filesystem', [
-      { name: 'pattern', type: 'string', description: 'Glob pattern (e.g. "**/*.ts")', required: true },
+    def('builtin-list-files', 'list_files', 'List files matching a glob pattern. Automatically ignores node_modules, .git, dist. Max 500 results.', 'filesystem', [
+      { name: 'pattern', type: 'string', description: 'Glob pattern (e.g. "**/*.ts", "src/**/*", "*")', required: true },
       { name: 'directory', type: 'string', description: 'Base directory to search in (defaults to working directory)', required: false },
     ]),
     async (params) => {
@@ -141,7 +147,8 @@ export function registerBuiltinTools(
         : getCwd();
       const pattern = params.pattern as string;
       const files = await simpleGlob(baseDir, pattern);
-      return { pattern, directory: baseDir, files, count: files.length };
+      const truncated = files.length >= MAX_GLOB_RESULTS;
+      return { pattern, directory: baseDir, files, count: files.length, truncated };
     },
   );
 
@@ -220,9 +227,9 @@ export function registerBuiltinTools(
   // 7. run_command
   // -----------------------------------------------------------------------
   registry.register(
-    def('builtin-run-command', 'run_command', 'Execute a shell command within the sandbox working directory.', 'system', [
-      { name: 'command', type: 'string', description: 'The command to execute (first word is the executable)', required: true },
-      { name: 'args', type: 'array', description: 'Arguments to pass to the command', required: false, default: [] },
+    def('builtin-run-command', 'run_command', 'Execute a shell command within the sandbox working directory. Supports shell syntax (pipes, redirects, etc).', 'system', [
+      { name: 'command', type: 'string', description: 'The shell command to execute (e.g. "ls -la", "find . -name *.ts | head -20")', required: true },
+      { name: 'args', type: 'array', description: 'Additional arguments to append to the command', required: false, default: [] },
       { name: 'timeout', type: 'number', description: 'Timeout in milliseconds (default 30000)', required: false, default: 30000 },
     ]),
     async (params) => {
@@ -230,16 +237,19 @@ export function registerBuiltinTools(
       const args = (params.args as string[]) ?? [];
       const timeout = (params.timeout as number) ?? 30000;
 
-      // Validate full command string for safety
-      sandbox.validateCommand([command, ...args].join(' '));
+      const fullCommand = args.length > 0 ? [command, ...args].join(' ') : command;
 
-      const { stdout, stderr } = await execFile(command, args, {
+      // Validate full command string for safety
+      sandbox.validateCommand(fullCommand);
+
+      const { stdout, stderr } = await execFile(fullCommand, [], {
         cwd: getCwd(),
         timeout,
         maxBuffer: 1024 * 1024, // 1 MB
+        shell: true,
       });
 
-      return { command, args, stdout, stderr };
+      return { command: fullCommand, stdout, stderr };
     },
   );
 

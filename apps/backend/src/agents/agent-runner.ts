@@ -27,6 +27,7 @@ export class AgentRunner {
 
     this.agentRegistry.updateStatus(agent.id, 'thinking');
     this.emitLog(agent.id, 'email_received', `Received: ${email.subject} from ${email.from}`);
+    log.info({ agentId: agent.id, agentName: agent.name, subject: email.subject, from: email.from }, 'Agent run started');
 
     const messages: LLMChatMessage[] = [
       { role: 'system', content: agent.systemPrompt },
@@ -54,6 +55,7 @@ export class AgentRunner {
       iterations++;
       this.agentRegistry.updateStatus(agent.id, 'thinking');
       this.emitLog(agent.id, 'think', `Iteration ${iterations}`);
+      log.info({ agentId: agent.id, agentName: agent.name, iteration: iterations }, 'Agent iteration');
 
       try {
         const response = await this.llmRouter.route(
@@ -87,6 +89,7 @@ export class AgentRunner {
           // Execute each tool call
           for (const toolCall of response.toolCalls) {
             this.emitLog(agent.id, 'tool_call', `Calling ${toolCall.name}`);
+            log.info({ agentId: agent.id, agentName: agent.name, tool: toolCall.name }, 'Agent tool call');
 
             let params: Record<string, unknown>;
             try {
@@ -124,6 +127,7 @@ export class AgentRunner {
         // No tool calls — final response
         finalResponse = response.content;
         this.emitLog(agent.id, 'think', `Completed after ${iterations} iterations`);
+        log.info({ agentId: agent.id, agentName: agent.name, iterations }, 'Agent run completed');
         break;
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);

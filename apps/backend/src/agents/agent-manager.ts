@@ -93,30 +93,36 @@ export class AgentManager {
   }
 
   async createAgent(params: AgentCreateParams): Promise<Agent> {
-    const agent: Agent = {
-      id: uuid(),
-      name: params.name,
-      email: params.email,
-      type: params.type,
-      status: 'idle',
-      systemPrompt: params.systemPrompt,
-      description: params.description,
-      groupId: params.groupId,
-      parentAgentId: params.parentAgentId,
-      modelId: params.modelId,
-      providerId: params.providerId,
-      toolIds: params.toolIds || [],
-      skillIds: params.skillIds || [],
-      maxConcurrentTasks: params.maxConcurrentTasks || 1,
-      projectId: this.projectId,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    // Check if agent with this email or name already exists — prevent duplicates
+    const existing = this.agentRepo.findByEmail(params.email)
+      || this.agentRepo.findByName(params.name);
 
-    this.agentRepo.create(agent);
-    this.agentRegistry.register(agent);
-    log.info({ id: agent.id, name: agent.name, email: agent.email }, 'Agent created');
-    return agent;
+    if (existing) {
+      // Update existing agent with new params and re-register in memory
+      const updated = this.agentRepo.update(existing.id, {
+        systemPrompt: params.systemPrompt,
+        description: params.description,
+        modelId: params.modelId || this.defaultModelId,
+        providerId: params.providerId || this.defaultProviderId,
+        toolIds: params.toolIds,
+        groupId: params.groupId,
+        parentAgentId: params.parentAgentId,
+        status: 'idle',
+      });
+      if (updated) {
+        this.agentRegistry.register(updated);
+        log.info({ id: updated.id, name: updated.name, email: updated.email }, 'Agent reactivated (already existed in DB)');
+        return updated;
+      }
+    }
+
+    const created = this.agentRepo.create({
+      ...params,
+      projectId: this.projectId,
+    });
+    this.agentRegistry.register(created);
+    log.info({ id: created.id, name: created.name, email: created.email }, 'Agent created');
+    return created;
   }
 
   async initializeSystemAgents(defaultModelId?: string, defaultProviderId?: string): Promise<void> {
@@ -157,7 +163,38 @@ export class AgentManager {
       });
     }
 
-    log.info('System agents initialized');
+    // Deduplicate worker agents by name — keep most recent, delete older duplicates
+    const allAgents = this.agentRepo.findAll();
+    const workersByName = new Map<string, Agent[]>();
+    for (const agent of allAgents) {
+      if (agent.type === 'system') continue;
+      const group = workersByName.get(agent.name) || [];
+      group.push(agent);
+      workersByName.set(agent.name, group);
+    }
+    for (const [, agents] of workersByName) {
+      if (agents.length <= 1) continue;
+      agents.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      const [, ...duplicates] = agents;
+      for (const dup of duplicates) {
+        this.agentRepo.delete(dup.id);
+        log.info({ id: dup.id, name: dup.name, email: dup.email }, 'Deleted duplicate worker agent');
+      }
+    }
+
+    // Load ALL non-system agents from DB into registry
+    // so list_agents shows them and they can receive emails after restart
+    const cleanedAgents = this.agentRepo.findAll();
+    for (const agent of cleanedAgents) {
+      if (agent.type === 'system') continue; // already handled above
+      if (this.agentRegistry.get(agent.id)) continue; // already registered
+      agent.status = 'idle';
+      this.agentRepo.updateStatus(agent.id, 'idle');
+      this.agentRegistry.register(agent);
+      log.info({ id: agent.id, name: agent.name, email: agent.email }, 'Loaded worker agent from DB');
+    }
+
+    log.info('All agents initialized');
   }
 
   async routeEmail(email: Email): Promise<void> {
@@ -271,6 +308,10 @@ export class AgentManager {
 
       const response = await this.agentRunner.run(agent, email, allowedCategories);
 
+      if (!response) {
+        log.warn({ agentId: agent.id, agentName: agent.name }, 'Agent returned empty response — no auto-reply sent');
+      }
+
       if (response) {
         // Each agent can auto-reply at most ONCE per thread.
         // This prevents infinite loops while allowing the first reply in a chain.
@@ -283,10 +324,17 @@ export class AgentManager {
           return;
         }
 
-        log.info({ from: agent.email, to: email.from, threadId: email.threadId }, 'Sending auto-reply');
+        // Worker/lead agents always send results to Master — all task results
+        // flow through Master to reach the user's chat. Dispatcher sends back
+        // to email.from (which is Master in normal flow).
+        const replyTo = (agent.type === 'worker' || agent.type === 'lead')
+          ? SYSTEM_AGENTS.MASTER.email
+          : email.from;
+
+        log.info({ from: agent.email, to: replyTo, threadId: email.threadId }, 'Sending auto-reply');
         await this.mailService.sendEmail({
           from: agent.email,
-          to: [email.from],
+          to: [replyTo],
           subject: `Re: ${email.subject}`,
           body: response,
           inReplyTo: email.messageId,
@@ -380,7 +428,7 @@ WORKFLOW:
 WHEN AGENTS EMAIL YOU BACK:
 - If an agent asks a question → answer it or create a helper agent
 - If an agent needs a collaborator → create one and connect them
-- If an agent reports they are done → no action needed (they send results directly)
+- If an agent sends completed results → forward them to the original requester using send_email
 
 EXAMPLE 1 — Simple task from master@company.local: "Analyze project files"
 1. list_agents → no analyst worker

@@ -64,6 +64,11 @@ export class AgentRepository {
     return row ? rowToAgent(row) : undefined;
   }
 
+  findByName(name: string): Agent | undefined {
+    const row = this.db.prepare('SELECT * FROM agents WHERE name = ?').get(name) as AgentRow | undefined;
+    return row ? rowToAgent(row) : undefined;
+  }
+
   create(agent: AgentCreateParams & { projectId: string }): Agent {
     const now = new Date().toISOString();
     const id = uuidv4();
