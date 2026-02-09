@@ -8,6 +8,10 @@ export class UsageReporter {
     return this.metricsRepo.getAgentMetrics(agentId);
   }
 
+  getAllAgentMetrics(): AgentMetrics[] {
+    return this.metricsRepo.getAllAgentMetrics();
+  }
+
   getTotalCost(timeRange?: MetricsTimeRange): number {
     return this.metricsRepo.getTotalCost(timeRange);
   }
