@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { MessageSquare, Send, FolderOpen, Settings, ChevronDown, ChevronRight, Wrench, Brain, CheckCircle, XCircle, Loader2, ArrowUp, Folder } from 'lucide-react';
+import { MessageSquare, Send, FolderOpen, Settings, ChevronDown, ChevronRight, Wrench, Brain, CheckCircle, XCircle, Loader2, ArrowUp, Folder, Plus, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -198,6 +198,106 @@ function FolderBrowser({ onSelect }: { onSelect: (path: string) => void }) {
 }
 
 // ---------------------------------------------------------------------------
+// ChatSidebar
+// ---------------------------------------------------------------------------
+
+interface ChatSidebarProps {
+  sessions: Array<{ id: string; title: string; createdAt: string; messageCount: number }>;
+  loading: boolean;
+  activeSessionId: string | null;
+  onFetch: () => void;
+  onSelect: (id: string) => void;
+  onDelete: (id: string) => void;
+  onNewChat: () => void;
+}
+
+function ChatSidebar({ sessions, loading, activeSessionId, onFetch, onSelect, onDelete, onNewChat }: ChatSidebarProps) {
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    onFetch();
+  }, [onFetch]);
+
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setDeletingId(id);
+    try {
+      await onDelete(id);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  return (
+    <div className="w-64 flex-shrink-0 border-r border-gray-200 dark:border-gray-800 flex flex-col bg-gray-50 dark:bg-gray-950">
+      {/* New chat button */}
+      <div className="p-3 border-b border-gray-200 dark:border-gray-800">
+        <button
+          onClick={onNewChat}
+          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          New Chat
+        </button>
+      </div>
+
+      {/* Sessions list */}
+      <div className="flex-1 overflow-y-auto">
+        {loading && sessions.length === 0 && (
+          <div className="flex items-center justify-center py-8 text-gray-400">
+            <Loader2 className="w-5 h-5 animate-spin" />
+          </div>
+        )}
+
+        {!loading && sessions.length === 0 && (
+          <div className="text-center py-8 text-xs text-gray-400 dark:text-gray-500 px-3">
+            No previous sessions
+          </div>
+        )}
+
+        {sessions.map((session) => (
+          <button
+            key={session.id}
+            onClick={() => onSelect(session.id)}
+            className={`w-full text-left px-3 py-2.5 border-b border-gray-100 dark:border-gray-800 group transition-colors ${
+              activeSessionId === session.id
+                ? 'bg-primary-50 dark:bg-primary-900/20 border-l-2 border-l-primary-500'
+                : 'hover:bg-gray-100 dark:hover:bg-gray-900'
+            }`}
+          >
+            <div className="flex items-start justify-between gap-1">
+              <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate flex-1">
+                {session.title}
+              </p>
+              <button
+                onClick={(e) => handleDelete(e, session.id)}
+                disabled={deletingId === session.id}
+                className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-400 hover:text-red-500 transition-all flex-shrink-0"
+                title="Delete session"
+              >
+                {deletingId === session.id ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )}
+              </button>
+            </div>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-xs text-gray-400 dark:text-gray-500">
+                {new Date(session.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+              </span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">
+                {session.messageCount} msg{session.messageCount !== 1 ? 's' : ''}
+              </span>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // ChatPage
 // ---------------------------------------------------------------------------
 
@@ -211,6 +311,13 @@ export default function ChatPage() {
   const setIsStreaming = useStore((s) => s.setIsStreaming);
   const clearStreamingContent = useStore((s) => s.clearStreamingContent);
   const sendChatMessage = useStore((s) => s.sendChatMessage);
+
+  const chatSessions = useStore((s) => s.chatSessions);
+  const chatSessionsLoading = useStore((s) => s.chatSessionsLoading);
+  const fetchChatSessions = useStore((s) => s.fetchChatSessions);
+  const deleteChatSession = useStore((s) => s.deleteChatSession);
+  const selectChatSession = useStore((s) => s.selectChatSession);
+  const startNewChatSession = useStore((s) => s.startNewChatSession);
 
   const systemStatus = useStore((s) => s.systemStatus);
   const globalSettings = useStore((s) => s.globalSettings);
@@ -328,22 +435,35 @@ export default function ChatPage() {
 
   // Gate 3: Normal chat
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-gray-900">
-      {/* Top bar */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-        <MessageSquare className="w-5 h-5 text-gray-500" />
-        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-          Chat with Master Agent
-        </span>
-        {chatSessionId && (
-          <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">
-            {chatSessionId.slice(0, 12)}...
-          </span>
-        )}
-      </div>
+    <div className="flex h-full bg-white dark:bg-gray-900">
+      {/* Sidebar */}
+      <ChatSidebar
+        sessions={chatSessions}
+        loading={chatSessionsLoading}
+        activeSessionId={chatSessionId}
+        onFetch={fetchChatSessions}
+        onSelect={selectChatSession}
+        onDelete={deleteChatSession}
+        onNewChat={startNewChatSession}
+      />
 
-      {/* Messages area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      {/* Main chat area */}
+      <div className="flex flex-col flex-1 min-w-0">
+        {/* Top bar */}
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-800">
+          <MessageSquare className="w-5 h-5 text-gray-500" />
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            Chat with Master Agent
+          </span>
+          {chatSessionId && (
+            <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">
+              {chatSessionId.slice(0, 12)}...
+            </span>
+          )}
+        </div>
+
+        {/* Messages area */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && !streamingContent && (
           <div className="flex items-center justify-center h-full text-gray-400 dark:text-gray-500">
             <div className="text-center">
@@ -435,25 +555,26 @@ export default function ChatPage() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input area */}
-      <div className="border-t border-gray-200 dark:border-gray-800 p-4">
-        <div className="flex items-end gap-3 max-w-4xl mx-auto">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Type a message..."
-            rows={1}
-            className="input resize-none min-h-[42px] max-h-40"
-          />
-          <button
-            onClick={handleSend}
-            disabled={!input.trim() || isStreaming}
-            className="btn-primary flex items-center gap-1.5 flex-shrink-0"
-          >
-            <Send className="w-4 h-4" />
-            {isStreaming ? '...' : 'Send'}
-          </button>
+        {/* Input area */}
+        <div className="border-t border-gray-200 dark:border-gray-800 p-4">
+          <div className="flex items-end gap-3 max-w-4xl mx-auto">
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Type a message..."
+              rows={1}
+              className="input resize-none min-h-[42px] max-h-40"
+            />
+            <button
+              onClick={handleSend}
+              disabled={!input.trim() || isStreaming}
+              className="btn-primary flex items-center gap-1.5 flex-shrink-0"
+            >
+              <Send className="w-4 h-4" />
+              {isStreaming ? '...' : 'Send'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

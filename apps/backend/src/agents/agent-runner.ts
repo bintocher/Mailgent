@@ -57,6 +57,33 @@ export class AgentRunner {
       this.emitLog(agent.id, 'think', `Iteration ${iterations}`);
       log.info({ agentId: agent.id, agentName: agent.name, iteration: iterations }, 'Agent iteration');
 
+      // Adaptive termination: check progress at regular intervals
+      if (iterations > 1 && iterations % LIMITS.PROGRESS_CHECK_INTERVAL === 0) {
+        this.emitLog(agent.id, 'think', `Progress check at iteration ${iterations}`);
+        const progress = await this.checkProgress(agent, messages, iterations);
+        this.emitLog(agent.id, 'think', `Progress: ${progress.summary}`);
+        log.info({ agentId: agent.id, iteration: iterations, isStalling: progress.isStalling }, 'Progress check result');
+
+        if (progress.isStalling) {
+          log.warn({ agentId: agent.id, iteration: iterations }, 'Agent appears to be stalling — requesting early termination');
+          this.emitLog(agent.id, 'think', 'Agent stalling detected — requesting final summary');
+
+          messages.push({
+            role: 'user',
+            content: 'You appear to be stuck or making insufficient progress. Please provide a final summary of what you have accomplished so far and what remains to be done. Do NOT call any tools — just respond with text.',
+          });
+
+          const summaryResponse = await this.llmRouter.route(
+            { messages, modelId: agent.modelId || '', providerId: agent.providerId || '' },
+            'agent-task',
+          );
+          this.tokenTracker.track(summaryResponse, agent.id, agent.name, 'agent-task', agent.groupId);
+          finalResponse = summaryResponse.content || `Agent stalled after ${iterations} iterations: ${progress.summary}`;
+          this.emitLog(agent.id, 'think', `Early termination after ${iterations} iterations`);
+          break;
+        }
+      }
+
       try {
         const response = await this.llmRouter.route(
           {
@@ -143,6 +170,46 @@ export class AgentRunner {
           role: 'assistant',
           content: `I encountered an error: ${error}. Let me try a different approach.`,
         });
+      }
+    }
+
+    // If loop ended without a final text response (e.g. hit max iterations while still calling tools),
+    // make one last LLM call WITHOUT tools to force a summary response
+    if (!finalResponse) {
+      log.warn({ agentId: agent.id, agentName: agent.name, iterations }, 'Agent hit max iterations without final response — requesting summary');
+      this.emitLog(agent.id, 'think', 'Max iterations reached — requesting summary');
+
+      try {
+        messages.push({
+          role: 'user',
+          content: 'You have reached the maximum number of allowed iterations. Please provide a final summary of what you have accomplished and what remains to be done. Do NOT call any tools — just respond with text.',
+        });
+
+        const summaryResponse = await this.llmRouter.route(
+          {
+            messages,
+            modelId: agent.modelId || '',
+            providerId: agent.providerId || '',
+            // No tools — force text-only response
+          },
+          'agent-task',
+        );
+
+        this.tokenTracker.track(summaryResponse, agent.id, agent.name, 'agent-task', agent.groupId);
+
+        if (summaryResponse.content) {
+          finalResponse = summaryResponse.content;
+          log.info({ agentId: agent.id, agentName: agent.name }, 'Agent provided summary after max iterations');
+        }
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        log.error({ agentId: agent.id, error }, 'Failed to get summary response');
+      }
+
+      // If still no response — build one from tool results
+      if (!finalResponse) {
+        finalResponse = `Task incomplete: Agent "${agent.name}" used all ${LIMITS.MAX_AGENT_THINK_ITERATIONS} iterations but could not complete the task. Please review the agent logs for details.`;
+        log.warn({ agentId: agent.id, agentName: agent.name }, 'Using fallback incomplete-task response');
       }
     }
 
@@ -261,7 +328,35 @@ export class AgentRunner {
       }
     }
 
-    return 'Error: Agent exceeded maximum thinking iterations.';
+    // Hit max iterations while still calling tools — request summary
+    log.warn({ agentId: agent.id, iterations }, 'Agentic chat hit max iterations — requesting summary');
+
+    try {
+      messages.push({
+        role: 'user',
+        content: 'You have reached the maximum number of allowed iterations. Please provide a final summary of what you have accomplished and what remains to be done. Do NOT call any tools — just respond with text.',
+      });
+
+      const summaryResponse = await this.llmRouter.route(
+        {
+          messages,
+          modelId: agent.modelId || '',
+          providerId: agent.providerId || '',
+        },
+        'chat',
+      );
+
+      this.tokenTracker.track(summaryResponse, agent.id, agent.name, 'chat', agent.groupId);
+
+      if (summaryResponse.content) {
+        return summaryResponse.content;
+      }
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      log.error({ agentId: agent.id, error }, 'Failed to get chat summary response');
+    }
+
+    return `Task incomplete: Agent used all ${LIMITS.MAX_AGENT_THINK_ITERATIONS} iterations but could not complete the task.`;
   }
 
   async runStreaming(
@@ -292,6 +387,56 @@ export class AgentRunner {
       '',
       email.body,
     ].join('\n');
+  }
+
+  /**
+   * Progress check: asks LLM (without tools) to self-assess progress.
+   * Uses a COPY of messages so the agent doesn't see its own self-assessment.
+   * Returns whether the agent appears to be stalling.
+   */
+  private async checkProgress(
+    agent: Agent,
+    messages: LLMChatMessage[],
+    iteration: number,
+  ): Promise<{ isStalling: boolean; summary: string }> {
+    try {
+      const checkMessages: LLMChatMessage[] = [
+        ...messages,
+        {
+          role: 'user',
+          content: `You have completed ${iteration} iterations. Evaluate your progress honestly.
+Respond ONLY with a JSON object (no markdown, no backticks):
+{"progressPercent": <0-100>, "isStuck": <true/false>, "remainingSteps": <number>, "summary": "<brief status>"}
+
+If you are repeating the same actions, getting errors repeatedly, or making no meaningful progress, set isStuck=true.`,
+        },
+      ];
+
+      const response = await this.llmRouter.route(
+        {
+          messages: checkMessages,
+          modelId: agent.modelId || '',
+          providerId: agent.providerId || '',
+          // No tools — force text-only assessment
+        },
+        'agent-task',
+      );
+
+      this.tokenTracker.track(response, agent.id, agent.name, 'progress-check', agent.groupId);
+
+      // Try to parse JSON from the response
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        const isStalling = parsed.isStuck === true || (parsed.progressPercent < 10 && iteration >= 10);
+        return { isStalling, summary: parsed.summary || response.content };
+      }
+
+      return { isStalling: false, summary: response.content };
+    } catch (err) {
+      log.warn({ agentId: agent.id, error: err }, 'Progress check failed — continuing');
+      return { isStalling: false, summary: 'Progress check failed' };
+    }
   }
 
   private emitLog(agentId: string, type: AgentLog['type'], content: string): void {

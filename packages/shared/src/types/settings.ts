@@ -21,6 +21,7 @@ export interface ProjectSettings {
   defaultProviderId?: string;
   shellTimeout: number; // ms
   shellDenyList: string[];
+  enableReviewer?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -35,6 +36,7 @@ export const DEFAULT_PROJECT_SETTINGS: Omit<ProjectSettings, 'projectId' | 'work
   gitAutoCommit: false,
   shellTimeout: 30000,
   shellDenyList: ['rm -rf /', 'mkfs', 'dd if=', ':(){:|:&};:'],
+  enableReviewer: false,
 };
 
 export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {

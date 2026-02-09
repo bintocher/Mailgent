@@ -8,6 +8,7 @@ export const SYSTEM_AGENTS = {
   CONTEXT_COMPRESSOR: { name: 'Context Compressor', email: 'compressor@company.local' },
   SKILL_WRITER: { name: 'Skill Writer', email: 'skills@company.local' },
   LLM_SELECTOR: { name: 'LLM Selector', email: 'llm-selector@company.local' },
+  REVIEWER: { name: 'Reviewer', email: 'reviewer@company.local' },
 } as const;
 
 // Default departments
@@ -41,14 +42,15 @@ export const LIMITS = {
   MAX_TOOL_EXECUTION_TIME: 30000, // 30s
   MAX_AGENT_THINK_ITERATIONS: 20,
   MAX_THREAD_DEPTH: 10,
-  MAX_SUB_AGENTS: 10,
+  MAX_SUB_AGENTS: 20,
   DEFAULT_RATE_LIMIT_RPM: 60,
   DEFAULT_RATE_LIMIT_TPM: 100000,
   QUEUE_MAX_RETRIES: 3,
   QUEUE_RETRY_DELAY_MS: 5000,
-  QUEUE_MAX_CONCURRENT: 5,
+  QUEUE_MAX_CONCURRENT: 10,
   QUEUE_PROCESSING_TIMEOUT_MS: 300000, // 5min
   WS_HEARTBEAT_INTERVAL_MS: 30000,
+  PROGRESS_CHECK_INTERVAL: 5, // Check agent progress every N iterations
 } as const;
 
 // Email domain

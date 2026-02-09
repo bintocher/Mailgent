@@ -10,6 +10,7 @@ import type {
   SkillDefinition,
   GlobalSettings,
   ProjectSettings,
+  ChatSession,
   ChatMessage,
   TokenUsage,
   TokenUsageTimeSeries,
@@ -85,12 +86,17 @@ interface EmailsSlice {
 interface ChatSlice {
   chatMessages: ChatMessage[];
   chatSessionId: string | null;
+  chatSessions: ChatSession[];
+  chatSessionsLoading: boolean;
   isStreaming: boolean;
   streamingContent: string;
   agenticSteps: ChatStep[];
   pendingFinalMessage: ChatMessage | null;
   fetchChatSessions: () => Promise<void>;
   fetchChatMessages: (sessionId: string) => Promise<void>;
+  deleteChatSession: (sessionId: string) => Promise<void>;
+  selectChatSession: (sessionId: string) => Promise<void>;
+  startNewChatSession: () => void;
   setChatSessionId: (id: string | null) => void;
   addChatMessage: (message: ChatMessage) => void;
   setIsStreaming: (streaming: boolean) => void;
@@ -369,18 +375,47 @@ export const useStore = create<AppStore>()((set, get) => ({
   // -----------------------------------------------------------------------
   chatMessages: [],
   chatSessionId: null,
+  chatSessions: [],
+  chatSessionsLoading: false,
   isStreaming: false,
   streamingContent: '',
   agenticSteps: [],
   pendingFinalMessage: null,
 
   fetchChatSessions: async () => {
-    await http.fetchChatSessions();
+    set({ chatSessionsLoading: true });
+    try {
+      const sessions = await http.fetchChatSessions();
+      set({ chatSessions: sessions, chatSessionsLoading: false });
+    } catch (err) {
+      console.error('Failed to fetch chat sessions:', err);
+      set({ chatSessionsLoading: false });
+    }
   },
 
   fetchChatMessages: async (sessionId) => {
     const messages = await http.fetchChatMessages(sessionId);
     set({ chatMessages: messages, chatSessionId: sessionId });
+  },
+
+  deleteChatSession: async (sessionId) => {
+    await http.deleteChatSession(sessionId);
+    const { chatSessionId } = get();
+    set((s) => ({
+      chatSessions: s.chatSessions.filter((ses) => ses.id !== sessionId),
+      ...(chatSessionId === sessionId
+        ? { chatMessages: [], chatSessionId: null, streamingContent: '', agenticSteps: [] }
+        : {}),
+    }));
+  },
+
+  selectChatSession: async (sessionId) => {
+    const messages = await http.fetchChatMessages(sessionId);
+    set({ chatMessages: messages, chatSessionId: sessionId, streamingContent: '', agenticSteps: [] });
+  },
+
+  startNewChatSession: () => {
+    set({ chatMessages: [], chatSessionId: null, streamingContent: '', agenticSteps: [] });
   },
 
   setChatSessionId: (id) => set({ chatSessionId: id }),

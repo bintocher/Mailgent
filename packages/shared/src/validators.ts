@@ -101,6 +101,7 @@ export const projectSettingsSchema = z.object({
   defaultProviderId: z.string().optional(),
   shellTimeout: z.number().int().min(1000).optional(),
   shellDenyList: z.array(z.string()).optional(),
+  enableReviewer: z.boolean().optional(),
 });
 
 export const globalSettingsSchema = z.object({

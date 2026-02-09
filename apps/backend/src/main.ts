@@ -20,6 +20,7 @@ import { MailServer } from './mail/mail-server';
 import { MailService } from './mail/mail-service';
 import { MailStore } from './mail/mail-store';
 import { MailQueue } from './mail/mail-queue';
+import { SafetyFilter } from './mail/safety-filter';
 import { LLMFactory } from './llm/llm-factory';
 import { LLMRouter } from './llm/llm-router';
 import { RateLimiter } from './llm/rate-limiter';
@@ -341,9 +342,10 @@ async function main() {
   const agentRegistry = new AgentRegistry(eventBus);
   const agentRunner = new AgentRunner(llmRouter, tokenTracker, toolExecutor, toolRegistry, agentRegistry, eventBus);
   const groupManager = new GroupManager(groupRepo, agentRepo, eventBus);
+  const safetyFilter = new SafetyFilter(emailRepo, eventBus);
   let agentManager = new AgentManager(
     agentRepo, emailRepo, agentRegistry, agentRunner, groupManager,
-    mailService, eventBus, projectId,
+    mailService, eventBus, projectId, safetyFilter, projectSettingsRepo,
   );
 
   const taskAggregator = new TaskAggregator();
@@ -437,7 +439,7 @@ async function main() {
     agentRegistry.stopAll();
     agentManager = new AgentManager(
       agentRepo, emailRepo, agentRegistry, agentRunner, groupManager,
-      mailService, eventBus, projectId,
+      mailService, eventBus, projectId, safetyFilter, projectSettingsRepo,
     );
 
     const newDefaultModel = projectSettingsRepo.get('defaultModelId') as string | undefined;

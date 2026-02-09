@@ -339,6 +339,10 @@ export function fetchChatMessages(sessionId: string): Promise<ChatMessage[]> {
   return api<ChatMessage[]>(`/chat/sessions/${sessionId}/messages`);
 }
 
+export function deleteChatSession(sessionId: string): Promise<void> {
+  return api<void>(`/chat/sessions/${sessionId}`, { method: 'DELETE' });
+}
+
 // ---------------------------------------------------------------------------
 // Metrics
 // ---------------------------------------------------------------------------
