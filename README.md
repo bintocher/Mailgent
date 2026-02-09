@@ -4,6 +4,8 @@ Virtual Company platform with AI agents communicating via internal email.
 
 Mailgent creates a virtual workplace where AI agents collaborate through an internal SMTP server. Each agent has an email address, is powered by an LLM (Claude, OpenAI, or compatible), can use tools, and works together with other agents to solve complex tasks.
 
+<img width="1316" height="1262" alt="image" src="https://github.com/user-attachments/assets/13c3680b-6238-497e-8b86-95dbf7d1522a" />
+
 <img width="1185" height="964" alt="image" src="https://github.com/user-attachments/assets/f9ed2ccc-acb9-4162-b8b4-76d2c92edf87" />
 
 <img width="1180" height="939" alt="image" src="https://github.com/user-attachments/assets/f8458bda-a001-4b0b-badb-32ffbd96aad6" />
