@@ -18,6 +18,8 @@ import type {
   AgentMetrics,
   QueueStats,
   SystemStatus,
+  TuningSession,
+  TuningStartParams,
 } from '@mailgent/shared';
 import * as http from '../api/http-client';
 import { wsClient } from '../api/ws-client';
@@ -179,6 +181,31 @@ interface UISlice {
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
 }
 
+export interface TuningStepLog {
+  id: string;
+  sessionId: string;
+  type: 'start' | 'done' | 'error';
+  phase: string;
+  message: string;
+  durationMs?: number;
+  timestamp: string;
+}
+
+interface TuningSlice {
+  tuningSessions: TuningSession[];
+  tuningLoading: boolean;
+  selectedTuningSessionId: string | null;
+  tuningSteps: TuningStepLog[];
+  fetchTuningSessions: () => Promise<void>;
+  startTuning: (params: TuningStartParams) => Promise<TuningSession>;
+  applyRecommendation: (sessionId: string, category?: 'bestOverall' | 'bestValue' | 'bestSpeed') => Promise<void>;
+  deleteTuningSession: (sessionId: string) => Promise<void>;
+  updateTuningSession: (session: Partial<TuningSession> & { id: string }) => void;
+  setSelectedTuningSessionId: (id: string | null) => void;
+  addTuningStep: (step: TuningStepLog) => void;
+  clearTuningSteps: () => void;
+}
+
 // ---------------------------------------------------------------------------
 // Combined store type
 // ---------------------------------------------------------------------------
@@ -192,7 +219,8 @@ export type AppStore = AgentsSlice &
   MetricsSlice &
   SettingsSlice &
   SystemSlice &
-  UISlice;
+  UISlice &
+  TuningSlice;
 
 // ---------------------------------------------------------------------------
 // Store implementation
@@ -547,7 +575,6 @@ export const useStore = create<AppStore>()((set, get) => ({
   agentMetrics: [],
   queueStats: null,
   metricsLoading: false,
-
   fetchTokenMetrics: async () => {
     set({ metricsLoading: true });
     try {
@@ -798,4 +825,86 @@ export const useStore = create<AppStore>()((set, get) => ({
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   setTheme: (theme) => set({ theme }),
+
+  // -----------------------------------------------------------------------
+  // Tuning
+  // -----------------------------------------------------------------------
+  tuningSessions: [],
+  tuningLoading: false,
+  selectedTuningSessionId: null,
+  tuningSteps: [],
+
+  fetchTuningSessions: async () => {
+    set({ tuningLoading: true });
+    try {
+      const fetched = await http.fetchTuningSessions();
+      // Merge: preserve WS-provided fields (phase, completedSteps, totalSteps) that DB doesn't store
+      set((s) => ({
+        tuningSessions: fetched.map((session) => {
+          const existing = s.tuningSessions.find((e) => e.id === session.id);
+          if (existing && (existing.phase || existing.completedSteps !== undefined)) {
+            return {
+              ...existing,
+              ...session,
+              // Keep WS fields if DB doesn't have them
+              phase: session.phase ?? existing.phase,
+              completedSteps: session.completedSteps ?? existing.completedSteps,
+              totalSteps: session.totalSteps ?? existing.totalSteps,
+            };
+          }
+          return session;
+        }),
+        tuningLoading: false,
+      }));
+    } catch (err) {
+      console.error('Failed to fetch tuning sessions:', err);
+      set({ tuningLoading: false });
+    }
+  },
+
+  startTuning: async (params) => {
+    const session = await http.startTuning(params);
+    set((s) => ({ tuningSessions: [session, ...s.tuningSessions] }));
+    return session;
+  },
+
+  applyRecommendation: async (sessionId, category = 'bestOverall') => {
+    const result = await http.applyTuningRecommendation(sessionId, category);
+    // Refresh agents since model changed
+    const agents = await http.fetchAgents();
+    set({ agents });
+  },
+
+  deleteTuningSession: async (sessionId) => {
+    await http.deleteTuningSession(sessionId);
+    set((s) => ({
+      tuningSessions: s.tuningSessions.filter((ses) => ses.id !== sessionId),
+      selectedTuningSessionId:
+        s.selectedTuningSessionId === sessionId ? null : s.selectedTuningSessionId,
+    }));
+  },
+
+  updateTuningSession: (partial) =>
+    set((s) => {
+      const exists = s.tuningSessions.some((ses) => ses.id === partial.id);
+      if (exists) {
+        return {
+          tuningSessions: s.tuningSessions.map((ses) =>
+            ses.id === partial.id ? { ...ses, ...partial } : ses,
+          ),
+        };
+      }
+      // Session not in store yet (WS event arrived before HTTP response) — refetch
+      http.fetchTuningSessions().then((sessions) => {
+        set({ tuningSessions: sessions });
+      }).catch(() => {});
+      return {};
+    }),
+
+  setSelectedTuningSessionId: (id) => set({ selectedTuningSessionId: id }),
+
+  addTuningStep: (step) =>
+    set((s) => ({ tuningSteps: [...s.tuningSteps, step] })),
+
+  clearTuningSteps: () => set({ tuningSteps: [] }),
 }));

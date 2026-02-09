@@ -9,6 +9,7 @@ import {
   Wrench,
   Zap,
   BarChart3,
+  SlidersHorizontal,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -19,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '@/store';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import TopBar from './TopBar';
 
 const navItems = [
   { to: '/', label: 'Chat', icon: MessageSquare },
@@ -29,6 +31,7 @@ const navItems = [
   { to: '/tools', label: 'Tools', icon: Wrench },
   { to: '/skills', label: 'Skills', icon: Zap },
   { to: '/metrics', label: 'Metrics', icon: BarChart3 },
+  { to: '/tuning', label: 'Tuning', icon: SlidersHorizontal },
   { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -152,8 +155,11 @@ export default function Layout() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto">
-        <Outlet />
+      <main className="flex-1 flex flex-col overflow-hidden">
+        <TopBar />
+        <div className="flex-1 overflow-auto">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

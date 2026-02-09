@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import path from 'path';
 import fs from 'fs';
+import { execFile } from 'node:child_process';
 import type { SystemStatus } from '@mailgent/shared';
 import type { AgentRegistry } from '../../agents/agent-registry';
 import type { AgentManager } from '../../agents/agent-manager';
@@ -116,6 +117,21 @@ export function createSystemRoutes(deps: SystemRoutesDeps): Router {
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
     }
+  });
+
+  // POST /system/open-folder - Open working directory in OS file manager
+  router.post('/system/open-folder', (_req, res) => {
+    const workDir = getWorkDir();
+    if (!workDir) {
+      res.status(400).json({ error: 'No working directory set' });
+      return;
+    }
+    const cmd = process.platform === 'darwin' ? 'open'
+              : process.platform === 'win32' ? 'explorer' : 'xdg-open';
+    execFile(cmd, [workDir], (err) => {
+      if (err) console.error('Failed to open folder:', err);
+    });
+    res.json({ status: 'opened', workDir });
   });
 
   // POST /system/stop-all - Stop all agents and clear the queue

@@ -24,8 +24,9 @@ export class LLMRouter {
   ): Promise<LLMCompletionResponse> {
     const rule = this.rules.find(r => r.taskType === taskType || r.taskType === '*');
 
-    let providerId = rule?.preferredProviderId || request.providerId;
-    let modelId = rule?.preferredModelId || request.modelId;
+    // Agent's explicit model takes priority over routing rules
+    let providerId = request.providerId || rule?.preferredProviderId || '';
+    let modelId = request.modelId || rule?.preferredModelId || '';
 
     let provider = providerId ? this.factory.getProvider(providerId) : undefined;
 
@@ -89,8 +90,9 @@ export class LLMRouter {
   ): Promise<LLMCompletionResponse> {
     const rule = this.rules.find(r => r.taskType === taskType || r.taskType === '*');
 
-    let providerId = rule?.preferredProviderId || request.providerId;
-    let modelId = rule?.preferredModelId || request.modelId;
+    // Agent's explicit model takes priority over routing rules
+    let providerId = request.providerId || rule?.preferredProviderId || '';
+    let modelId = request.modelId || rule?.preferredModelId || '';
 
     let provider = providerId ? this.factory.getProvider(providerId) : undefined;
 

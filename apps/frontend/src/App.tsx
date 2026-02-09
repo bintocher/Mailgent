@@ -9,6 +9,7 @@ import ToolsPage from './pages/ToolsPage';
 import SkillsPage from './pages/SkillsPage';
 import MetricsPage from './pages/MetricsPage';
 import SettingsPage from './pages/SettingsPage';
+import TuningPage from './pages/TuningPage';
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
         <Route path="/tools" element={<ToolsPage />} />
         <Route path="/skills" element={<SkillsPage />} />
         <Route path="/metrics" element={<MetricsPage />} />
+        <Route path="/tuning" element={<TuningPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
     </Routes>
