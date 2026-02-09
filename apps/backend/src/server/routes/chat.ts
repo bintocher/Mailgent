@@ -112,5 +112,30 @@ export function createChatRoutes(deps: ChatRoutesDeps): Router {
     }
   });
 
+  // DELETE /chat/sessions/:id - Delete a chat session (CASCADE deletes messages)
+  router.delete('/sessions/:id', (req, res) => {
+    try {
+      const projectDb = getProjectDb();
+      if (!projectDb) {
+        res.status(400).json({ error: 'No project opened' });
+        return;
+      }
+      const db = projectDb.getDb();
+
+      const result = db
+        .prepare('DELETE FROM chat_sessions WHERE id = ?')
+        .run(req.params.id);
+
+      if (result.changes === 0) {
+        res.status(404).json({ error: 'Chat session not found' });
+        return;
+      }
+
+      res.status(204).send();
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+    }
+  });
+
   return router;
 }

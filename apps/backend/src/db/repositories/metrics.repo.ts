@@ -224,6 +224,61 @@ export class MetricsRepository {
     };
   }
 
+  getAllAgentMetrics(): AgentMetrics[] {
+    const rows = this.db.prepare(`
+      SELECT
+        agent_id,
+        agent_name,
+        group_id,
+        SUM(total_tokens) as total_tokens_used,
+        SUM(cost_usd) as total_cost_usd,
+        AVG(duration_ms) as avg_response_time_ms,
+        COUNT(*) as total_calls,
+        SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) as tasks_completed,
+        SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) as tasks_failed
+      FROM llm_usage_records
+      GROUP BY agent_id
+    `).all() as {
+      agent_id: string;
+      agent_name: string;
+      group_id: string | null;
+      total_tokens_used: number;
+      total_cost_usd: number;
+      avg_response_time_ms: number;
+      total_calls: number;
+      tasks_completed: number;
+      tasks_failed: number;
+    }[];
+
+    return rows.map((row) => {
+      const modelRows = this.db.prepare(`
+        SELECT model_id, COUNT(*) as usage_count
+        FROM llm_usage_records
+        WHERE agent_id = ?
+        GROUP BY model_id
+      `).all(row.agent_id) as { model_id: string; usage_count: number }[];
+
+      const modelsUsed: Record<string, number> = {};
+      for (const mr of modelRows) {
+        modelsUsed[mr.model_id] = mr.usage_count;
+      }
+
+      return {
+        agentId: row.agent_id,
+        agentName: row.agent_name,
+        groupId: row.group_id ?? undefined,
+        totalEmails: 0,
+        totalTokensUsed: row.total_tokens_used,
+        totalCostUsd: row.total_cost_usd,
+        totalToolCalls: row.total_calls,
+        avgResponseTimeMs: Math.round(row.avg_response_time_ms),
+        tasksCompleted: row.tasks_completed,
+        tasksFailed: row.tasks_failed,
+        modelsUsed,
+      };
+    });
+  }
+
   getUsageTimeSeries(timeRange: MetricsTimeRange, agentId?: string, modelId?: string): TokenUsageTimeSeries[] {
     const conditions: string[] = ['timestamp >= ?', 'timestamp <= ?'];
     const values: unknown[] = [timeRange.from, timeRange.to];

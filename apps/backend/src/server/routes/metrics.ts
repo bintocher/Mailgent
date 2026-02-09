@@ -48,14 +48,24 @@ export function createMetricsRoutes(deps: MetricsRoutesDeps): Router {
     }
   });
 
-  // GET /metrics/llm-performance - LLM performance stats
-  router.get('/llm-performance', (req, res) => {
+  // GET /metrics/llm - LLM performance stats
+  router.get('/llm', (req, res) => {
     try {
       const modelId = typeof req.query.modelId === 'string' ? req.query.modelId : undefined;
       const taskType = typeof req.query.taskType === 'string' ? req.query.taskType : undefined;
 
       const stats = metricsRepo.getPerformanceStats(modelId, taskType);
       res.json(stats);
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+    }
+  });
+
+  // GET /metrics/agents - Get metrics for all agents
+  router.get('/agents', (_req, res) => {
+    try {
+      const metrics = usageReporter.getAllAgentMetrics();
+      res.json(metrics);
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
     }
