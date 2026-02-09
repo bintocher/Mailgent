@@ -151,18 +151,58 @@ npm run lint  # ESLint
 
 ## Pull Requests
 
-- Keep PRs focused — one feature or fix per PR
-- Include a description of what changed and why
-- Make sure `make check` passes
-- Update types in `packages/shared` if your changes affect the API contract
+All changes are accepted **only through Pull Requests**. Direct pushes to `main` are not allowed.
+
+### How to submit a PR
+
+1. Fork the repository
+2. Create a feature branch from `main`:
+   ```bash
+   git checkout -b feature/my-feature
+   ```
+3. Make your changes and ensure `make check` passes
+4. Commit with a clear, descriptive message:
+   ```bash
+   git commit -m "feat: Add support for custom email templates"
+   ```
+5. Push your branch:
+   ```bash
+   git push origin feature/my-feature
+   ```
+6. Open a Pull Request against `main`
+
+### PR requirements
+
+- **One feature or fix per PR** — keep changes focused and reviewable
+- **Descriptive title** — short, clear summary of the change (under 70 characters)
+- **Description** — explain what changed, why, and how to test it
+- **Passing checks** — `make check` must pass without errors
+- **Shared types** — update `packages/shared` if your changes affect the API contract
+- **No unrelated changes** — don't sneak in formatting or refactoring outside the scope
+
+### Commit message format
+
+Use [Conventional Commits](https://www.conventionalcommits.org/):
+
+| Prefix | Usage |
+|--------|-------|
+| `feat:` | New feature |
+| `fix:` | Bug fix |
+| `refactor:` | Code refactoring without behavior change |
+| `docs:` | Documentation only |
+| `chore:` | Build, deps, config changes |
 
 ## Reporting Issues
 
-Open an issue on GitHub with:
+Found a bug or have a feature suggestion? Please open an [Issue](https://github.com/bintocher/Mailgent/issues) on GitHub.
+
+Include in bug reports:
 - Steps to reproduce
 - Expected vs actual behavior
 - Node.js version (22+) and OS
 - Relevant log output
+
+For feature requests, describe the use case and expected behavior.
 
 ## License
 

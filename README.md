@@ -179,6 +179,16 @@ WebSocket endpoint: `/ws` — real-time events for agent activity, emails, chat 
 | Git | simple-git |
 | Logging | pino + pino-pretty |
 
+## Community
+
+Telegram: https://t.me/mailgent
+
+## Contributing
+
+All changes are accepted only through Pull Requests. See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+Bugs and feature requests — [GitHub Issues](https://github.com/bintocher/Mailgent/issues).
+
 ## License
 
 [MIT](LICENSE) — Stanislav Chernov ([@bintocher](https://github.com/bintocher))
