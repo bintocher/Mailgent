@@ -50,6 +50,7 @@ export class WSServer {
       'email:new', 'email:status', 'agent:created', 'agent:status', 'agent:log',
       'agent:destroyed', 'tool:executed', 'metrics:update', 'queue:update',
       'system:error',
+      'tuning:started', 'tuning:progress', 'tuning:completed', 'tuning:error', 'tuning:step',
     ];
 
     for (const event of events) {

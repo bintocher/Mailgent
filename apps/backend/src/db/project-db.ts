@@ -209,6 +209,45 @@ export class ProjectDatabase {
           CREATE INDEX IF NOT EXISTS idx_agent_logs_timestamp ON agent_logs(timestamp);
         `,
       },
+      {
+        name: '009_tuning_sessions',
+        sql: `
+          CREATE TABLE IF NOT EXISTS tuning_sessions (
+            id TEXT PRIMARY KEY,
+            agent_id TEXT NOT NULL,
+            agent_name TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            models_tested TEXT NOT NULL DEFAULT '[]',
+            tasks_count INTEGER NOT NULL DEFAULT 5,
+            progress INTEGER NOT NULL DEFAULT 0,
+            recommendation TEXT,
+            error TEXT,
+            started_at TEXT NOT NULL,
+            completed_at TEXT,
+            FOREIGN KEY (agent_id) REFERENCES agents(id)
+          );
+        `,
+      },
+      {
+        name: '010_tuning_results',
+        sql: `
+          CREATE TABLE IF NOT EXISTS tuning_results (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            model_id TEXT NOT NULL,
+            provider_id TEXT NOT NULL,
+            task_index INTEGER NOT NULL,
+            task_prompt TEXT NOT NULL,
+            response TEXT NOT NULL,
+            score REAL NOT NULL DEFAULT 0,
+            judge_comment TEXT,
+            tokens INTEGER NOT NULL DEFAULT 0,
+            cost_usd REAL NOT NULL DEFAULT 0,
+            duration_ms INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (session_id) REFERENCES tuning_sessions(id) ON DELETE CASCADE
+          );
+        `,
+      },
     ];
   }
 

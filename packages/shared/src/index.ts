@@ -9,6 +9,7 @@ export * from './types/chat';
 export * from './types/metrics';
 export * from './types/queue';
 export * from './types/ws-events';
+export * from './types/tuning';
 
 // Constants
 export * from './constants';

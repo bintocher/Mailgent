@@ -8,7 +8,6 @@ import type {
   ChatMessage,
   Email,
   QueueStats,
-  ToolCallResult,
 } from '@mailgent/shared';
 
 /**
@@ -38,6 +37,8 @@ export function useWebSocket(): void {
   const setConnected = useStore((s) => s.setConnected);
   const fetchTokenMetrics = useStore((s) => s.fetchTokenMetrics);
   const fetchAgentMetrics = useStore((s) => s.fetchAgentMetrics);
+  const updateTuningSession = useStore((s) => s.updateTuningSession);
+  const addTuningStep = useStore((s) => s.addTuningStep);
 
   useEffect(() => {
     // Guard against StrictMode double-mount
@@ -185,9 +186,14 @@ export function useWebSocket(): void {
 
     // ----- Tool events -----------------------------------------------------
 
+    let toolExecutedTimer: ReturnType<typeof setTimeout> | null = null;
     const onToolExecuted = (_data: unknown) => {
-      // Components can listen directly if they need per-tool-call updates.
-      const _result = (_data as { result: ToolCallResult; agentId: string }).result;
+      // Debounce fetchAgentMetrics to avoid flooding when many tool calls fire
+      if (toolExecutedTimer) clearTimeout(toolExecutedTimer);
+      toolExecutedTimer = setTimeout(() => {
+        fetchAgentMetrics();
+        toolExecutedTimer = null;
+      }, 300);
     };
 
     // ----- Metrics events --------------------------------------------------
@@ -214,6 +220,58 @@ export function useWebSocket(): void {
       console.error(`[WS] system:error (${code ?? 'unknown'}): ${message}`);
     };
 
+    // ----- Tuning events ---------------------------------------------------
+
+    const onTuningStarted = (data: unknown) => {
+      const { session } = data as { session: { id: string; status: string } };
+      updateTuningSession({ id: session.id, status: 'running' } as any);
+    };
+
+    const onTuningProgress = (data: unknown) => {
+      const { sessionId, progress, status, phase, completed, total } = data as {
+        sessionId: string; progress: number; status?: string;
+        phase?: string; completed?: number; total?: number;
+      };
+      const update: any = { id: sessionId, progress };
+      if (status) update.status = status;
+      if (phase) update.phase = phase;
+      if (completed !== undefined) update.completedSteps = completed;
+      if (total !== undefined) update.totalSteps = total;
+      updateTuningSession(update);
+    };
+
+    const onTuningCompleted = (data: unknown) => {
+      const { session } = data as { session: any };
+      updateTuningSession({
+        id: session.id,
+        status: 'completed',
+        progress: 100,
+        recommendation: session.recommendation,
+        completedAt: session.completedAt,
+      });
+    };
+
+    const onTuningError = (data: unknown) => {
+      const { sessionId, error } = data as { sessionId: string; error: string };
+      updateTuningSession({ id: sessionId, status: 'failed', error });
+    };
+
+    const onTuningStep = (data: unknown) => {
+      const { sessionId, type, phase, message, durationMs } = data as {
+        sessionId: string; type: 'start' | 'done' | 'error';
+        phase: string; message: string; durationMs?: number;
+      };
+      addTuningStep({
+        id: `step-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        sessionId,
+        type,
+        phase,
+        message,
+        durationMs,
+        timestamp: new Date().toISOString(),
+      });
+    };
+
     // ----- Register listeners and connect ----------------------------------
 
     wsClient.on('_connected', onConnected);
@@ -236,6 +294,11 @@ export function useWebSocket(): void {
     wsClient.on('metrics:update', onMetricsUpdate);
     wsClient.on('queue:update', onQueueUpdate);
     wsClient.on('system:error', onSystemError);
+    wsClient.on('tuning:started', onTuningStarted);
+    wsClient.on('tuning:progress', onTuningProgress);
+    wsClient.on('tuning:completed', onTuningCompleted);
+    wsClient.on('tuning:error', onTuningError);
+    wsClient.on('tuning:step', onTuningStep);
 
     wsClient.connect();
 
@@ -243,6 +306,7 @@ export function useWebSocket(): void {
 
     return () => {
       mountedRef.current = false;
+      if (toolExecutedTimer) clearTimeout(toolExecutedTimer);
 
       wsClient.off('_connected', onConnected);
       wsClient.off('_disconnected', onDisconnected);
@@ -264,6 +328,11 @@ export function useWebSocket(): void {
       wsClient.off('metrics:update', onMetricsUpdate);
       wsClient.off('queue:update', onQueueUpdate);
       wsClient.off('system:error', onSystemError);
+      wsClient.off('tuning:started', onTuningStarted);
+      wsClient.off('tuning:progress', onTuningProgress);
+      wsClient.off('tuning:completed', onTuningCompleted);
+      wsClient.off('tuning:error', onTuningError);
+      wsClient.off('tuning:step', onTuningStep);
 
       wsClient.disconnect();
     };
@@ -285,5 +354,7 @@ export function useWebSocket(): void {
     setConnected,
     fetchTokenMetrics,
     fetchAgentMetrics,
+    updateTuningSession,
+    addTuningStep,
   ]);
 }

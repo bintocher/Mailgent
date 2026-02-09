@@ -19,6 +19,9 @@ import type {
   QueueStats,
   SystemStatus,
   MetricsTimeRange,
+  TuningSession,
+  TuningStartParams,
+  TuningResult,
 } from '@mailgent/shared';
 
 // ---------------------------------------------------------------------------
@@ -390,6 +393,10 @@ export function stopAllOperations(): Promise<{ status: string }> {
   return api<{ status: string }>('/system/stop-all', { method: 'POST' });
 }
 
+export function openFolder(): Promise<{ status: string; workDir: string }> {
+  return api<{ status: string; workDir: string }>('/system/open-folder', { method: 'POST' });
+}
+
 export function openProject(workDir: string): Promise<{ workDir: string; status: string }> {
   return api<{ workDir: string; status: string }>('/project/open', {
     method: 'POST',
@@ -412,4 +419,50 @@ export interface BrowseResult {
 export function browseDirectories(dirPath?: string): Promise<BrowseResult> {
   const params = dirPath ? '?' + new URLSearchParams({ path: dirPath }).toString() : '';
   return api<BrowseResult>(`/system/browse${params}`);
+}
+
+// ---------------------------------------------------------------------------
+// Tuning
+// ---------------------------------------------------------------------------
+
+export interface TuningModelOption {
+  id: string;           // "providerId:modelId"
+  modelId: string;
+  providerId: string;
+  displayName: string;
+  costPerInputToken: number;
+  costPerOutputToken: number;
+}
+
+export function fetchTuningModels(): Promise<TuningModelOption[]> {
+  return api<TuningModelOption[]>('/tuning/models');
+}
+
+export function startTuning(params: TuningStartParams): Promise<TuningSession> {
+  return api<TuningSession>('/tuning/start', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
+export function fetchTuningSessions(): Promise<TuningSession[]> {
+  return api<TuningSession[]>('/tuning/sessions');
+}
+
+export function fetchTuningSession(id: string): Promise<TuningSession & { results: TuningResult[] }> {
+  return api<TuningSession & { results: TuningResult[] }>(`/tuning/sessions/${id}`);
+}
+
+export function applyTuningRecommendation(
+  sessionId: string,
+  category: 'bestOverall' | 'bestValue' | 'bestSpeed' = 'bestOverall',
+): Promise<{ agent: Agent; applied: unknown }> {
+  return api(`/tuning/sessions/${sessionId}/apply`, {
+    method: 'POST',
+    body: JSON.stringify({ category }),
+  });
+}
+
+export function deleteTuningSession(sessionId: string): Promise<void> {
+  return api<void>(`/tuning/sessions/${sessionId}`, { method: 'DELETE' });
 }

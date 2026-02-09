@@ -55,6 +55,9 @@ import { createChatRoutes } from './server/routes/chat';
 import { createMetricsRoutes } from './server/routes/metrics';
 import { createSystemRoutes } from './server/routes/system';
 import { createProviderRoutes } from './server/routes/providers';
+import { createTuningRoutes } from './server/routes/tuning';
+import { TuningRepository } from './db/repositories/tuning.repo';
+import { TuningEngine } from './tuning/tuning-engine';
 
 const log = createChildLogger('main');
 
@@ -228,6 +231,7 @@ async function main() {
   const metricsRepo = new MetricsRepository(globalDb.getDb());
   const globalSettingsRepo = new SettingsRepository(globalDb.getDb(), 'global_settings');
   const projectSettingsRepo = new SettingsRepository(effectiveProjectDb.getDb(), 'project_settings');
+  const tuningRepo = new TuningRepository(effectiveProjectDb.getDb());
 
   // Save current workDir as lastWorkDir (only if it's real)
   if (currentWorkDir) {
@@ -421,6 +425,7 @@ async function main() {
     toolRepo.swapDb(newDb);
     skillRepo.swapDb(newDb);
     projectSettingsRepo.swapDb(newDb);
+    tuningRepo.swapDb(newDb);
 
     // 4a. Update sandbox working directory for tools
     sandbox.setWorkDir(newWorkDir);
@@ -460,6 +465,37 @@ async function main() {
     eventBus.emit('project:switched', { workDir: newWorkDir, projectId });
   }
 
+  // 11b. Initialize tuning engine
+  const getModels = (): import('@mailgent/shared').LLMModel[] => {
+    const models: import('@mailgent/shared').LLMModel[] = [];
+    const provRows = globalDb.getDb().prepare('SELECT * FROM llm_providers WHERE is_enabled = 1').all() as any[];
+    for (const prov of provRows) {
+      const mRows = globalDb.getDb().prepare('SELECT * FROM llm_models WHERE provider_id = ? AND is_enabled = 1').all(prov.id) as any[];
+      for (const m of mRows) {
+        models.push({
+          id: m.id,
+          displayName: m.display_name,
+          providerId: m.provider_id,
+          contextWindow: m.context_window,
+          costPerInputToken: m.cost_per_input_token,
+          costPerOutputToken: m.cost_per_output_token,
+          capabilities: JSON.parse(m.capabilities || '[]'),
+          isEnabled: true,
+        });
+      }
+    }
+    return models;
+  };
+
+  const tuningEngine = new TuningEngine({
+    llmRouter,
+    llmFactory,
+    tokenTracker,
+    tuningRepo,
+    eventBus,
+    getModels,
+  });
+
   // 12. Create Express app with routes
   const routes = {
     '/agents': createAgentRoutes({ agentManager, agentRepo }),
@@ -471,6 +507,7 @@ async function main() {
     '/providers': createProviderRoutes({ globalDb: globalDb.getDb(), llmFactory, rateLimiter, tokenTracker }),
     '/chat': createChatRoutes({ getProjectDb: () => currentProjectDb }),
     '/metrics': createMetricsRoutes({ metricsRepo, usageReporter, mailQueue }),
+    '/tuning': createTuningRoutes({ tuningEngine, tuningRepo, agentRepo, agentRegistry }),
     '': createSystemRoutes({
       agentRegistry,
       agentManager,
